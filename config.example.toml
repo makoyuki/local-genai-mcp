@@ -1,0 +1,55 @@
+# local-genai-mcp の設定ファイル
+# このファイルを config.toml という名前でコピーし、自分の環境に合わせて書き換えてください。
+# (install.sh を実行すると、config.toml がなければ自動でコピーされます)
+
+[ollama]
+# 使わない場合は false
+enabled = true
+# Ollama が動いているマシンのアドレスとポート(OLLAMA_HOST=0.0.0.0:11434 で起動しておく)
+base_url = "http://192.168.0.10:11434"
+# モデル名を省略したときに使うモデル(空なら毎回指定が必要)
+default_model = ""
+# 応答を待つ最大秒数(大きいモデルの初回読み込みは時間がかかる)
+timeout_seconds = 300
+# 生成後にモデルをメモリに残しておく時間(例: "5m"、"0" ですぐ解放、空なら Ollama の既定値)
+keep_alive = ""
+# 思考(thinking)対応モデル(qwen3.5、deepseek-r1 など)で、答える前に考える過程を使うか。
+# true にすると込み入った問いに強くなるが、一言の質問でも1分以上かかることがある。ツールの引数 think で1回ごとに変えられる
+think = false
+
+[forge]
+enabled = true
+# Forge Neo(WebUI1111互換API)が動いているマシンのアドレスとポート
+# Forge Neo 側は COMMANDLINE_ARGS に --api --listen を付けて起動しておく
+base_url = "http://192.168.0.20:7860"
+# Forge Neo を --api-auth ユーザー名:パスワード 付きで起動している場合のみ設定
+username = ""
+password = ""
+timeout_seconds = 600
+# 生成した画像の保存先(このMCPサーバが動いているマシン側のフォルダ。~ はホームディレクトリ)
+output_dir = "~/ai-studio/repo/genai-outputs/forge"
+# 生成結果の縮小プレビューを Claude Code に返すか(返すと Claude が画像を見られる)
+preview = true
+# プレビューの長辺の最大ピクセル数
+preview_max_size = 512
+
+# 画像生成の既定値(ツール呼び出し時に省略した項目に使われる)
+[forge.defaults]
+negative_prompt = ""
+width = 1024
+height = 1024
+steps = 25
+cfg_scale = 7.0
+sampler_name = "Euler a"
+# 空なら Forge Neo 側の既定("Automatic")
+scheduler = ""
+# 画像の大きさは width x height で描いてから、Hires.fix で hr_scale 倍に拡大して描き直す
+# (既定では 1024x1024 → 2048x2048)。ツールの引数 width / height / hires / hr_scale などで1回ごとに変えられる
+enable_hr = true
+hr_scale = 2.0
+# アップスケーラ名は forge_list_samplers で確認できる
+hr_upscaler = "ESRGAN_4x"
+# 描き直す強さ(0〜1)。大きいほど細部が描き足されるが、元の絵から変わりやすい
+denoising_strength = 0.4
+# 描き直しのステップ数(0 なら steps と同じ)
+hr_second_pass_steps = 0

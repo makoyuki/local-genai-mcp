@@ -1,0 +1,8 @@
+# 実環境のIPアドレス・認証情報を含むため管理対象外(config.example.toml をコピーして作る)
+config.toml
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
