@@ -14,7 +14,15 @@ from pydantic import Field
 from ._http import ServiceError
 from .config import Config, candidate_paths, load_config
 from .guide import build_guide
-from .forge import ForgeClient, build_txt2img_payload, decode_image, make_preview, parse_seeds, save_images
+from .forge import (
+    ForgeClient,
+    build_txt2img_payload,
+    count_terms,
+    decode_image,
+    make_preview,
+    parse_seeds,
+    save_images,
+)
 from .ollama import OllamaClient
 
 SERVER_NAME = "local-genai"
@@ -25,6 +33,8 @@ LAN内で動いているローカル生成AIを使うためのツール群です
 - Ollama(ローカルLLM): ollama_list_models でモデルを確認し、ollama_chat で文章を生成します。
 - Forge Neo(Stable Diffusion WebUI互換の画像生成): forge_txt2img で画像を生成します。
   サイズ・Hires.fix(拡大して描き直す処理)の既定値は config.toml にあり、引数で1回ごとに変えられます。
+  config.toml の既定のネガティブプロンプトは毎回自動で付きます。negative_prompt にはその回だけ足したい語だけを渡し、
+  既定値を外す(use_default_negative=false)のはユーザーがはっきり頼んだときだけにしてください。
   生成には数十秒から数分かかります。画像はMCPサーバ側のフォルダにPNGで保存され、パスが返ります。
 使い方や頼み方を聞かれたら usage_guide の内容をもとに答えてください。
 うまく動かないときは、まず check_connections で接続状況を確認してください。"""
@@ -172,7 +182,10 @@ def build_server(config: Config, transport: httpx.AsyncBaseTransport | None = No
         @mcp.tool()
         async def forge_txt2img(
             prompt: Annotated[str, Field(description="プロンプト。WebUI1111と同じ書き方((word:1.2)の強調、<lora:名前:重み>)が使える")],
-            negative_prompt: Annotated[str | None, Field(description="ネガティブプロンプト(省略時は config.toml の既定値)")] = None,
+            negative_prompt: Annotated[str | None, Field(description="その回だけ追加するネガティブプロンプト。config.toml の既定のネガティブの後ろに"
+                                                                    "書き足される(既定値は毎回自動で付くので、ここに書き写さなくてよい)")] = None,
+            use_default_negative: Annotated[bool, Field(description="config.toml の既定のネガティブを付けるか。"
+                                                                    "ユーザーがはっきり外すよう頼んだときだけ false にする")] = True,
             width: Annotated[int | None, Field(description="幅(Hires.fix前の大きさ。64の倍数を推奨。省略時は既定値)", ge=64, le=4096)] = None,
             height: Annotated[int | None, Field(description="高さ(Hires.fix前の大きさ。64の倍数を推奨。省略時は既定値)", ge=64, le=4096)] = None,
             steps: Annotated[int | None, Field(description="ステップ数", ge=1, le=150)] = None,
@@ -195,6 +208,7 @@ def build_server(config: Config, transport: httpx.AsyncBaseTransport | None = No
                 config.forge,
                 prompt=prompt,
                 negative_prompt=negative_prompt,
+                use_default_negative=use_default_negative,
                 width=width,
                 height=height,
                 steps=steps,
@@ -226,6 +240,15 @@ def build_server(config: Config, transport: httpx.AsyncBaseTransport | None = No
                 f"{len(paths)}枚生成しました({size}, "
                 f"steps {payload['steps']}, cfg {payload['cfg_scale']}, {payload['sampler_name']})"
             ]
+            default_n = count_terms(config.forge.defaults.negative_prompt) if use_default_negative else 0
+            extra_n = count_terms(negative_prompt or "")
+            if not use_default_negative:
+                negative = f"既定のネガティブは外した(追加分 {extra_n}語)"
+            elif default_n:
+                negative = f"既定のネガティブ {default_n}語" + (f" + 追加 {extra_n}語" if extra_n else "")
+            else:
+                negative = "既定のネガティブなし(config.toml で未設定)" + (f"、追加 {extra_n}語" if extra_n else "")
+            summary[0] += f"\nネガティブ: {negative}"
             summary += [f"- {p} (seed {s})" for p, s in zip(paths, seeds)]
             result: list[str | Image] = ["\n".join(summary)]
             if config.forge.preview:

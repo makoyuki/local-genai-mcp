@@ -35,6 +35,10 @@ preview_max_size = 512
 
 # 画像生成の既定値(ツール呼び出し時に省略した項目に使われる)
 [forge.defaults]
+# 既定のネガティブプロンプト。MCPサーバが毎回自動で付けて送る(省略・上書きされない)。
+# ツールの引数 negative_prompt で渡した語は、この後ろに書き足される。
+# 望ましくない画像(NSFW など)を避けるための語は、ここにまとめておくとよい。
+# 例(Pony 系): "score_6, score_5, score_4, source_pony, source_furry, 3d, realistic, lowres, bad anatomy, text, watermark"
 negative_prompt = ""
 width = 1024
 height = 1024

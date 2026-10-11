@@ -281,3 +281,57 @@ async def test_connection_refused_gives_hint(tmp_path):
         check = text_of(await client.call_tool("check_connections", {}))
     assert chat.is_error and "OLLAMA_HOST" in text_of(chat)
     assert "[NG] Ollama" in check and "[NG] Forge Neo" in check and "--listen" in check
+
+
+@pytest.mark.anyio
+async def test_forge_txt2img_default_negative_is_always_added(tmp_path):
+    fake = FakeServices()
+    config = make_config(tmp_path)
+    config.forge.defaults.negative_prompt = "nsfw, lowres, bad anatomy,"
+    server = build_server(config, transport=httpx.MockTransport(fake))
+    async with Client(server) as client:
+        result = await client.call_tool("forge_txt2img", {"prompt": "cat"})
+        body = json.loads(fake.last("/sdapi/v1/txt2img").content)
+        assert body["negative_prompt"] == "nsfw, lowres, bad anatomy"
+        text = text_of(result)
+        assert "ネガティブ: 既定のネガティブ 3語" in text
+        assert "nsfw" not in text  # 既定の文言そのものは結果に出さない
+
+        # 引数のネガティブは既定値の後ろに書き足される(置き換えない)
+        result = await client.call_tool("forge_txt2img", {"prompt": "cat", "negative_prompt": "text, watermark"})
+        body = json.loads(fake.last("/sdapi/v1/txt2img").content)
+        assert body["negative_prompt"] == "nsfw, lowres, bad anatomy, text, watermark"
+        assert "既定のネガティブ 3語 + 追加 2語" in text_of(result)
+
+        # 明示したときだけ既定値を外せる
+        result = await client.call_tool("forge_txt2img", {
+            "prompt": "cat", "negative_prompt": "text", "use_default_negative": False,
+        })
+        body = json.loads(fake.last("/sdapi/v1/txt2img").content)
+        assert body["negative_prompt"] == "text"
+        assert "既定のネガティブは外した" in text_of(result)
+
+
+@pytest.mark.anyio
+async def test_forge_txt2img_without_default_negative(tmp_path):
+    fake = FakeServices()
+    server = build_server(make_config(tmp_path), transport=httpx.MockTransport(fake))
+    async with Client(server) as client:
+        result = await client.call_tool("forge_txt2img", {"prompt": "cat"})
+        body = json.loads(fake.last("/sdapi/v1/txt2img").content)
+        assert body["negative_prompt"] == ""
+        assert "既定のネガティブなし" in text_of(result)
+
+        await client.call_tool("forge_txt2img", {"prompt": "cat", "negative_prompt": "text"})
+        assert json.loads(fake.last("/sdapi/v1/txt2img").content)["negative_prompt"] == "text"
+
+
+def test_guide_explains_negative_policy_without_revealing_terms(tmp_path):
+    from local_genai_mcp.guide import build_guide
+
+    config = make_config(tmp_path)
+    config.forge.defaults.negative_prompt = "nsfw, nude, lowres"
+    text = build_guide(config)
+    assert "既定のネガティブプロンプト: 3語" in text
+    assert "### ネガティブプロンプトの扱い" in text and "毎回自動で付けて送る" in text
+    assert "nsfw" not in text and "nude" not in text

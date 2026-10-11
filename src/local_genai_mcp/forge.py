@@ -51,11 +51,25 @@ class ForgeClient(ApiClient):
         return await self.request("POST", "/sdapi/v1/txt2img", json=payload)
 
 
+def count_terms(text: str) -> int:
+    """ネガティブプロンプトの語数(カンマ区切りの項目数)。"""
+    return sum(1 for t in text.split(",") if t.strip())
+
+
+def merge_negative(default: str, extra: str | None, use_default: bool = True) -> str:
+    """既定のネガティブ(config.toml)に、その回だけの追加分を書き足す。
+    use_default=False のときだけ既定値を外し、追加分のみにする。"""
+    parts = [default.strip().rstrip(",")] if use_default else []
+    parts.append((extra or "").strip().strip(","))
+    return ", ".join(p for p in parts if p)
+
+
 def build_txt2img_payload(
     cfg: ForgeConfig,
     *,
     prompt: str,
     negative_prompt: str | None = None,
+    use_default_negative: bool = True,
     width: int | None = None,
     height: int | None = None,
     steps: int | None = None,
@@ -73,7 +87,7 @@ def build_txt2img_payload(
     d = cfg.defaults
     payload = {
         "prompt": prompt,
-        "negative_prompt": d.negative_prompt if negative_prompt is None else negative_prompt,
+        "negative_prompt": merge_negative(d.negative_prompt, negative_prompt, use_default_negative),
         "width": width or d.width,
         "height": height or d.height,
         "steps": steps or d.steps,

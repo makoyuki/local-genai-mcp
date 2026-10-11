@@ -1,4 +1,5 @@
 from .config import Config
+from .forge import count_terms
 
 
 def build_guide(config: Config) -> str:
@@ -30,6 +31,8 @@ def build_guide(config: Config) -> str:
             hires = f"オン(x{d.hr_scale:g}、{d.hr_upscaler}、描き直しの強さ {d.denoising_strength:g})→ 仕上がり {final}"
         else:
             hires = "オフ"
+        n = count_terms(d.negative_prompt)
+        negative = f"{n}語(毎回自動で付く。内容は config.toml を参照)" if n else "未設定(config.toml の negative_prompt で設定できる)"
         parts += [
             "## 画像生成(Forge Neo)",
             "",
@@ -38,6 +41,24 @@ def build_guide(config: Config) -> str:
             f"- 既定: steps {d.steps}、CFG {d.cfg_scale:g}、サンプラー {d.sampler_name}",
             f"- 保存先: {config.forge.output_dir}",
             "- プロンプトは WebUI1111 と同じ書き方((word:1.2) の強調、<lora:名前:重み>)が使える",
+            f"- 既定のネガティブプロンプト: {negative}",
+            "- 1回ごとに指定できるもの: プロンプト、追加のネガティブ、チェックポイント、大きさ、Hires.fix(有無・倍率・拡大方法・描き直しの強さ)、"
+            "サンプラー、スケジューラ、ステップ数、CFG、シード、枚数、保存先。指定しなかったものは上の既定値"
+            "(チェックポイントは Forge Neo でいま選ばれているもの)",
+            "- プロンプトは、そのまま渡されればそのまま使う。「〇〇を描いて」のように頼まれたら Claude がタグに組み立てる",
+            "",
+            "### ネガティブプロンプトの扱い",
+            "",
+            "- config.toml の既定のネガティブ(negative_prompt)は、MCPサーバが毎回自動で付けて送る。"
+            "Claude の判断や会話を通らないので、書き忘れや言い換えで抜けることはない",
+            "- 望ましくない画像(NSFW など)を避けるための語は、config.toml の既定のネガティブにまとめておく。"
+            "その語を会話やプロンプトに毎回書く必要はない",
+            "- Claude が渡すネガティブは、その回だけ足したい語(「首にかかったヘッドホン」「画像の中の文字」など)だけにする。"
+            "既定のネガティブの後ろに書き足される",
+            "- 既定のネガティブを外すのは、ユーザーがはっきりそう頼んだときだけ(「既定のネガティブなしで」など)",
+            "- 既定のネガティブを入れても、モデルによっては望ましくない方向に寄ることがある(Pony 系など)。"
+            "その場合はモデルを変えるか、Forge Neo の画面で直接生成する",
+            "- 生成結果には、既定のネガティブの語数と追加した語数だけが表示される(既定のネガティブの文言そのものは表示しない)",
             "",
             "頼み方の例:",
             "- 「夕焼けの海辺を歩く猫を1枚描いて」 → 既定の設定で生成",
@@ -48,6 +69,7 @@ def build_guide(config: Config) -> str:
             "- 「(モデル名)で描いて」 → モデルを切り替えて生成(名前はモデルの一覧で確認)"
             "。Forge Neo 側で選ばれているモデルも切り替わったままになる。切り替えには数十秒かかる",
             "- 「output フォルダに保存して」 → 保存先を指定",
+            "- 「ネガティブに text, watermark を足して」 → その回だけネガティブを追加(既定のネガティブはそのまま付く)",
             "",
         ]
 
