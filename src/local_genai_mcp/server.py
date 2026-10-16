@@ -9,6 +9,7 @@ from typing import Annotated
 import httpx
 from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
 
 from ._http import ServiceError
@@ -27,6 +28,8 @@ from .ollama import OllamaClient
 
 SERVER_NAME = "local-genai"
 MAX_PREVIEWS = 4
+DEFAULT_HTTP_PORT = 8765
+HTTP_PATH = "/mcp"
 
 INSTRUCTIONS = """\
 LAN内で動いているローカル生成AIを使うためのツール群です。
@@ -270,12 +273,45 @@ def build_error_server(message: str) -> MCPServer:
     return mcp
 
 
+def http_security(host: str, allow_hosts: list[str]) -> TransportSecuritySettings:
+    """HTTP で待ち受けるときの Host / Origin ヘッダの許可リスト(DNS リバインディング対策)。"""
+    names = ["127.0.0.1", "localhost", host, *allow_hosts]
+    hosts = [n if ":" in n else f"{n}:*" for n in dict.fromkeys(names)]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=[f"http://{h}" for h in hosts],
+    )
+
+
+def run_server(mcp: MCPServer, args: argparse.Namespace) -> None:
+    """既定は stdio。--http のときは streamable-http で待ち受ける。"""
+    if not args.http:
+        mcp.run()
+        return
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+    mcp.run(
+        "streamable-http",
+        host=args.host,
+        port=args.port,
+        streamable_http_path=HTTP_PATH,
+        transport_security=http_security(args.host, args.allow_host),
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="local-genai-mcp", description="ローカル生成AI(Ollama、Forge Neo)用のMCPサーバ")
     parser.add_argument("--config", type=Path, help="設定ファイルのパス(省略時は自動で探す)")
     parser.add_argument("--check", action="store_true", help="接続確認だけを行って終了する")
     parser.add_argument("--print-config-paths", action="store_true", help="設定ファイルを探す場所を表示して終了する")
     parser.add_argument("--guide", action="store_true", help="使い方・頼み方のガイド(現在の既定値入り)を表示して終了する")
+    parser.add_argument("--http", action="store_true", help="stdio ではなく HTTP(streamable-http)で待ち受ける")
+    parser.add_argument("--host", default="127.0.0.1", help="--http のときに待ち受けるアドレス(既定: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=DEFAULT_HTTP_PORT, help=f"--http のときのポート(既定: {DEFAULT_HTTP_PORT})")
+    parser.add_argument(
+        "--allow-host", action="append", default=[], metavar="NAME",
+        help="--http のときに受け付ける Host ヘッダ名を追加する(例: host.docker.internal。複数回指定できる)",
+    )
     args = parser.parse_args(argv)
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -290,7 +326,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.check or args.guide:
             print(f"設定エラー: {e}", file=sys.stderr)
             sys.exit(1)
-        build_error_server(str(e)).run()
+        run_server(build_error_server(str(e)), args)
         return
 
     if args.guide:
@@ -303,7 +339,7 @@ def main(argv: list[str] | None = None) -> None:
         print(text)
         sys.exit(0 if ok else 1)
 
-    build_server(config).run()
+    run_server(build_server(config), args)
 
 
 if __name__ == "__main__":

@@ -121,6 +121,41 @@ denoising_strength = 0.4                 # 描き直す強さ
 - 設定ファイルは、環境変数 `LOCAL_GENAI_MCP_CONFIG` → このフォルダの `config.toml` → `~/.config/local-genai-mcp/config.toml` の順に探します(`local-genai-mcp --print-config-paths` で確認できます)
 - 設定を書き換えたら、Claude Code を起動し直すと反映されます
 
+## HTTP で動かす(LibreChat などから使う)
+
+書籍の執筆後に追加した使い方です。Claude Code から使う場合(stdio)は、これまでどおりで何も変わりません。
+
+`--http` を付けると、stdio ではなく HTTP(streamable-http)で待ち受けます。Docker で動いている LibreChat のように、Claude Code 以外の MCP クライアントから使うときのためのものです。
+
+```bash
+UV_PROJECT_ENVIRONMENT=~/.local/share/local-genai-mcp/venv uv run --project . --no-dev local-genai-mcp \
+  --http --host 172.17.0.1 --port 8765 --allow-host host.docker.internal
+```
+
+- 接続先の URL は `http://<アドレス>:<ポート>/mcp` です(上の例で Docker のコンテナから使う場合は `http://host.docker.internal:8765/mcp`)
+- `--host` の既定は `127.0.0.1`(同じマシンからだけ使える)、`--port` の既定は `8765` です。`172.17.0.1` は Docker の既定のブリッジ(`docker0`)のアドレスで、こうするとコンテナからは使え、LAN の他のマシンからは届きません
+- 受け付ける `Host` ヘッダは、`127.0.0.1`・`localhost`・`--host` のアドレスと、`--allow-host` で足した名前だけです(DNS リバインディング対策)。それ以外は 421 で断ります
+- HTTP 版には認証がありません。`--host 0.0.0.0` のように LAN 全体に公開するのは、信頼できるネットワークの中だけにしてください
+- 生成した画像は、HTTP 版でも MCP サーバを動かしているマシンのフォルダに保存されます
+
+LibreChat の `librechat.yaml` に登録する例:
+
+```yaml
+mcpServers:
+  local-genai:
+    type: streamable-http
+    url: http://host.docker.internal:8765/mcp
+    timeout: 600000   # 画像生成は数分かかることがあるので長めに(ミリ秒)
+    serverInstructions: true  # サーバの説明文(ネガティブプロンプトの扱いなど)をモデルに渡す
+
+mcpSettings:
+  # LibreChat は既定でプライベートアドレスへの接続を断るので、この宛先だけ許可する
+  allowedDomains:
+    - "host.docker.internal"
+  allowedAddresses:
+    - "host.docker.internal:8765"
+```
+
 ## 登録の解除
 
 ```bash

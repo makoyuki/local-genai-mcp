@@ -1,3 +1,4 @@
+import argparse
 import base64
 import io
 import json
@@ -335,3 +336,36 @@ def test_guide_explains_negative_policy_without_revealing_terms(tmp_path):
     assert "既定のネガティブプロンプト: 3語" in text
     assert "### ネガティブプロンプトの扱い" in text and "毎回自動で付けて送る" in text
     assert "nsfw" not in text and "nude" not in text
+
+
+class FakeRunner:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+
+
+def test_run_server_defaults_to_stdio():
+    from local_genai_mcp.server import run_server
+
+    runner = FakeRunner()
+    run_server(runner, argparse.Namespace(http=False))
+    assert runner.calls == [((), {})]
+
+
+def test_run_server_http_allows_only_listed_hosts(monkeypatch):
+    import local_genai_mcp.server as server
+
+    runner = FakeRunner()
+    monkeypatch.setattr(server, "load_config", lambda path: None)
+    monkeypatch.setattr(server, "build_server", lambda config: runner)
+    server.main(["--http", "--host", "172.17.0.1", "--port", "9000", "--allow-host", "host.docker.internal"])
+
+    (args, kwargs), = runner.calls
+    assert args == ("streamable-http",)
+    assert (kwargs["host"], kwargs["port"], kwargs["streamable_http_path"]) == ("172.17.0.1", 9000, "/mcp")
+    security = kwargs["transport_security"]
+    assert security.enable_dns_rebinding_protection
+    assert security.allowed_hosts == ["127.0.0.1:*", "localhost:*", "172.17.0.1:*", "host.docker.internal:*"]
+    assert "http://host.docker.internal:*" in security.allowed_origins
